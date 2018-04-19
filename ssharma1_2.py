@@ -1,7 +1,5 @@
 import os  
 import sys  
-stdout = sys.stderr 
-sys.stderr = open(os.devnull,'w') 
 
 import tensorflow as tf
 import cv2
@@ -13,7 +11,7 @@ np.random.seed(7)
 
 # ------------------ PREPROCESSING -------------------
 
-directort_name=sys.argv[1]
+# directort_name=sys.argv[1]
 image_size = 200
 
 def images_array():
@@ -22,7 +20,7 @@ def images_array():
 
 	padColor = 0
 
-	home = directort_name
+	home = "/Users/Shruti/Desktop/School/Spring 2018/PHYS 476/Homework/HW 3/2. CNN/flowers/"
 	classes = ["daisy", "dandelion", "rose", "sunflower", "tulip"]
 	data = []
 	for c in classes:
@@ -97,9 +95,10 @@ def create_data():
 def next_batch(x, y, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(x), n):
-        yield (x[i:i + n], y[i:i + n])
+        yield x[i:i + n], y[i:i + n]
 
 # ------------------ Creating Model -------------------
+
 batch_size = 200
 learning_rate = 0.001
 max_steps = 1000
@@ -107,6 +106,7 @@ filter_size = 5
 num_classes = 5	# Number of classes 
 keep_rate = 0.8
 num_epochs = 15
+num_images = 4324
 
 num_features_conv1 = 128
 num_features_conv2 = 256
@@ -139,10 +139,9 @@ def cnn(x):
 	conv2 = conv_layer(conv1, weights['W_conv2'], biases['b_conv2'])
 
 	shapeConv2 = conv2.get_shape().as_list()
-	print (shapeConv2)
 
 	fc = tf.reshape(conv2, [-1, shapeConv2[1]*shapeConv2[2]*shapeConv2[3]])
-	print (fc.get_shape().as_list())
+
 	fc = tf.nn.relu(tf.matmul(fc, weights['W_fc']) + biases['b_fc'])
 	fc = tf.nn.dropout(fc, keep_rate)
 
@@ -184,108 +183,26 @@ def cnn(x):
 # --------------------- Testing --------------------
 
 train_x,train_y,test_x,test_y = create_data()
+num_batches = int(len(train_x) / batch_size)
+batches = next_batch(train_x, train_y, batch_size)
 
 def train_neural_network(x, y):
 	prediction = cnn(x)
 	cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=y))
 	train_op = tf.train.AdamOptimizer().minimize(cost)
 
+	correct_pred = tf.equal(tf.argmax(prediction, 1), tf.argmax(Y, 1))
+	accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
 	with tf.Session() as sess:
 		sess.run(tf.global_variables_initializer())
 
 		for epoch in range(num_epochs):
-			epoch_loss = 0
-			i=0
-			while i < len(train_x):
-				
-				start = i
-				end = i+batch_size
-				batch_x = np.array(train_x[start:end])
-				batch_y = np.array(train_y[start:end])
-				
-				# batch_x, batch_y = next_batch(train_x, train_y, batch_size)
-				sess.run(train_op, feed_dict={x: batch_x, y: batch_y})
-		
-				loss, acc = sess.run([loss_op, accuracy], feed_dict={X: batch_x,
-                                                                 Y: batch_y})
-
-		correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
-		accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
-
-		print('Accuracy:',accuracy.eval({x:test_x, y:test_y}))
-
+			for batch in range(num_batches):
+				batch_x, batch_y = next(batches)
+				sess.run(train_op, feed_dict={X: batch_x, Y: batch_y})
+			print ("Accuracy of epoch %d %d" , epoch, sess.run(accuracy, feed_dict={X: test_x, Y: test_y}))
+			
+		print ("Accuracy: ", sess.run(accuracy, feed_dict={X: test_x, Y: test_y}))
 train_neural_network(X, Y)
 sys.stderr=Stdout
-
-'''
-with tf.variable_scope("conv1") as scope:
-	kernel = tf.Variable(tf.truncated_normal(shape=[5, 5, 3, num_features_conv1], stddev=0.1, dtype=tf.float32))
-	biases = tf.Variable(tf.constant(0., shape=[num_features_conv1], dtype=tf.float32))
-	conv_layer = tf.nn.conv2d(input=images, filter=kernel, strides=[1, 1, 1, 1], padding='SAME')
-	pre_activation = tf.nn.bias_add(conv_layer, biases) #???: Is this the same as matmultiply and add
-	conv1 = tf.nn.relu(pre_activation, scope.name) 
-
-pool1 = tf.nn.max_pool(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1]) #TODO: play around with ksize and strides
-norm1 = tf.nn.lrn(pool1, depth_radius=4, name="norm1")
-
-
-with tf.variable_scope("conv2") as scope:
-	kernel = tf.Variable(tf.truncated_normal(shape=[5, 5, num_features_conv1, num_features_conv2], stddev=0.1, dtype=tf.float32))
-	biases = tf.Variable(tf.constant(0.1, shape=[num_features_conv2], dtype=tf.float32))
-	conv_layer = tf.nn.conv2d(input=norm1, filter=kernel, strides=[1, 1, 1, 1], padding="SAME")
-	pre_activation = tf.nn.bias_add(conv_layer, biases)
-	conv2 = tf.nn.relu(pre_activation, scope.name)
-
-#TODO: swap norm2 and pool2
-norm2 = tf.nn.lrn(conv2, depth_radius=4, name="norm2") #???: Why is this before pool2
-pool2 = tf.nn.max_pool(norm2, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1])
-
-# Fully connected layer
-with tf.variable_scope("fcl1") as scope:
-	# Resize the matrix to make multiplication easier ie. flatten it 	
-	reshape = tf.reshape(pool2, images.get_shape().as_list()[0], -1)
-	dim = reshape.get_shape()[1].value
-
-	weights = tf.Variable(tf.truncated_normal(shape=[dim, num_features_fcl1], stddev=0.4, dtype=tf.float32))
-	biases = tf.Variable(tf.constant(0.01, shape=[num_features_fcl1], dtype=tf.float32))
-	fcl1 = tf.relu(tf.matmul(reshape, weights)+biases, name=scope.name)
-
-with tf.variable_scope("fcl2") as scope:
-	weights = tf.Variable(tf.truncated_normal([num_features_fcl1, num_feature_fcl2], stddev=0.1, dtype=tf.float32))
-	biases = tf.Variable(tf.constant(0.01, shape=[num_feature_fcl2]))
-	fcl2 = tf.nn.relu(tf.matmul(fcl1, weights)+biases, name=scope.name)
-
-with tf.variable_scope("softmax") as scope:
-	weights = tf.Variable(tf.truncated_normal(shape=[num_feature_fcl2, num_classes], stddev=1/num_feature_fcl2))
-	biases = tf.Variable(tf.constant(0.05, shape=[num_classes]))
-	softmax = tf.add(tf.matmul((fcl2, weights)+biases, name=scope.name))
-
-def loss(logits, labels):
-	cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits, name="cross_entropy")
-	cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
-	tf.add_to_collection('losses', cross_entropy_mean)
-
-  	# The total loss is defined as the cross entropy loss plus all of the weight
-  	# decay terms (L2 loss).
-	return tf.add_n(tf.get_collection('losses'), name='total_loss')
-
-# -------- Train -------- 
-
-loss_op = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=softmax, labels=Y))
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-train_op = optimizer.minimize(loss_op)
-
-# Evaluate model (with test logits, for dropout to be disabled)
-correct_pred = tf.equal(tf.argmax(logits, 1), tf.argmax(Y, 1))
-accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-
-# Initialize the variables (i.e. assign their default value)
-init = tf.global_variables_initializer()
-
-with tf.Session() as sess:
-	sess.run(init)
-	for batch in range(batch_size):
-		x_batch, y_batch = getData()
-
-'''
